@@ -1,0 +1,5 @@
+{
+  "name": "SIS-SAUDE GAS System",
+  "description": "Integrated Health Inspection System for Google Apps Script environments.",
+  "requestFramePermissions": []
+}

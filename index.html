@@ -1,0 +1,398 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIS-SAUDE Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- React and ReactDOM from CDN (UMD) - Versão 18 estável -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Lucide React Icons (UMD) - Deve vir após o React -->
+    <script src="https://unpkg.com/lucide-react" crossorigin></script>
+    
+    <!-- Babel para transpilação JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            .page-break { page-break-after: always; }
+        }
+        .print-only { display: none; }
+        .spinner {
+            border: 3px solid rgba(49, 46, 129, 0.1);
+            border-radius: 50%;
+            border-top: 3px solid #312e81;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "react/": "https://esm.sh/react@^19.2.3/"
+  }
+}
+</script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useCallback } = React;
+
+        /**
+         * Componente Icone Robusto
+         * Acessa a biblioteca LucideReact via objeto global (UMD).
+         */
+        const Icon = ({ name, size = 20, className = "" }) => {
+            if (typeof LucideReact === 'undefined') return null;
+            const LucideIcon = LucideReact[name] || LucideReact.Shield;
+            if (!LucideIcon) return null;
+            return <LucideIcon size={size} className={className} />;
+        };
+
+        // --- COMPONENTES DE INTERFACE ---
+
+        const PrintTemplate = ({ person, history }) => (
+            <div className="print-only bg-white p-10 text-black min-h-screen page-break">
+                <div className="flex flex-col items-center text-center mb-8 border-b-2 border-black pb-6">
+                    <h1 className="text-xl font-bold uppercase">Ministério da Defesa</h1>
+                    <h2 className="text-lg font-bold uppercase">Comando da Aeronáutica</h2>
+                    <h3 className="text-md uppercase font-semibold">Diretoria de Saúde</h3>
+                </div>
+                <div className="mb-6">
+                    <h2 className="text-center text-lg font-bold bg-gray-100 p-2 uppercase border border-black mb-4">
+                        Histórico de Inspeção de Saúde
+                    </h2>
+                    <div className="grid grid-cols-2 gap-x-10 gap-y-2 border border-black p-4 text-xs">
+                        <p><strong>NOME:</strong> {person.name}</p>
+                        <p><strong>SARAM:</strong> {person.saram}</p>
+                        <p><strong>POSTO:</strong> {person.posto}</p>
+                        <p><strong>CPF:</strong> {person.cpf}</p>
+                        <p><strong>QUADRO/ESP:</strong> {person.quadro} - {person.especialidade}</p>
+                        <p><strong>OM:</strong> {person.om}</p>
+                        <p><strong>VÍNCULO:</strong> {person.vinculo}</p>
+                        <p><strong>DATA NASC.:</strong> {person.dt_nascimento}</p>
+                    </div>
+                </div>
+                <div className="space-y-4">
+                    <h3 className="font-bold border-b border-black pb-1 uppercase text-sm">Registros de Inspeção (Ordem Decrescente)</h3>
+                    {history && history.length > 0 ? history.map((h, i) => (
+                        <div key={i} className="border border-gray-300 p-3 mb-2 text-xs">
+                            <div className="flex justify-between font-bold mb-1">
+                                <span>DATA: {h.date}</span>
+                                <span>PARECER: {h.result}</span>
+                            </div>
+                            <p><strong>FINALIDADE:</strong> {h.type}</p>
+                            <p><strong>LOCAL:</strong> {h.location} | <strong>MÉDICO:</strong> {h.doctor}</p>
+                            <p className="mt-1 italic">"{h.observations}"</p>
+                        </div>
+                    )) : <p className="text-center italic mt-10">Nenhum registro encontrado no histórico.</p>}
+                </div>
+            </div>
+        );
+
+        const Dashboard = ({ data, loading, searchTerm, setSearchTerm, onSelect, onBulkPrint, selectedIds, toggleSelect, toggleSelectAll, error }) => {
+            const filtered = useMemo(() => {
+                if (!Array.isArray(data)) return [];
+                return data.filter(p => 
+                    (p.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+                    (p.saram && String(p.saram).includes(searchTerm))
+                );
+            }, [data, searchTerm]);
+
+            if (error) {
+                return (
+                    <div className="bg-red-50 border border-red-200 text-red-700 p-6 rounded-2xl flex items-center gap-4">
+                        <Icon name="AlertTriangle" size={24} />
+                        <div><p className="font-bold">Erro de Conexão</p><p className="text-sm">{error}</p></div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="space-y-6">
+                    <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                        <div>
+                            <h2 className="text-3xl font-bold text-indigo-950">Inspeções de Hoje</h2>
+                            <p className="text-slate-500 mt-1">Militares em avaliação - {new Date().toLocaleDateString('pt-BR')}</p>
+                        </div>
+                        <button 
+                            disabled={selectedIds.length === 0}
+                            onClick={onBulkPrint}
+                            className={`flex items-center gap-2 px-6 py-3 rounded-xl shadow-lg font-bold transition-all ${selectedIds.length > 0 ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
+                        >
+                            <Icon name="Printer" size={20} />
+                            Imprimir Selecionados ({selectedIds.length})
+                        </button>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                        <div className="relative">
+                            <Icon name="Search" className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                            <input 
+                                type="text"
+                                placeholder="Buscar por Nome ou SARAM..."
+                                className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead className="bg-slate-50 border-b border-slate-200">
+                                    <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                        <th className="px-4 py-4 w-10">
+                                            <input 
+                                                type="checkbox" 
+                                                className="w-4 h-4 accent-indigo-600"
+                                                checked={selectedIds.length === filtered.length && filtered.length > 0}
+                                                onChange={() => toggleSelectAll(filtered.map(f => f.id))}
+                                            />
+                                        </th>
+                                        <th className="px-4 py-4">Militar (Posto/Quadro/Nascimento)</th>
+                                        <th className="px-4 py-4">Identificação (Saram/CPF)</th>
+                                        <th className="px-4 py-4">OM</th>
+                                        <th className="px-4 py-4">Grupo / Vínculo</th>
+                                        <th className="px-4 py-4">Finalidade</th>
+                                        <th className="px-4 py-4 text-right">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200">
+                                    {loading ? (
+                                        [1,2,3].map(i => (
+                                            <tr key={i} className="animate-pulse"><td colSpan={7} className="p-8"><div className="h-4 bg-slate-200 rounded w-full"></div></td></tr>
+                                        ))
+                                    ) : filtered.length > 0 ? filtered.map((person) => (
+                                        <tr key={person.id} className="hover:bg-indigo-50/50 transition-colors text-xs">
+                                            <td className="px-4 py-4">
+                                                <input 
+                                                    type="checkbox" 
+                                                    className="w-4 h-4 accent-indigo-600"
+                                                    checked={selectedIds.includes(person.id)}
+                                                    onChange={() => toggleSelect(person.id)}
+                                                />
+                                            </td>
+                                            <td className="px-4 py-4">
+                                                <p className="font-bold text-slate-900">{person.name}</p>
+                                                <p className="text-[10px] text-slate-500">{person.posto} • {person.quadro} ({person.especialidade})</p>
+                                                <p className="text-[9px] text-slate-400">Nasc: {person.dt_nascimento}</p>
+                                            </td>
+                                            <td className="px-4 py-4 font-mono">
+                                                <p>S: {person.saram}</p>
+                                                <p>C: {person.cpf}</p>
+                                            </td>
+                                            <td className="px-4 py-4 font-bold text-indigo-700">{person.om}</td>
+                                            <td className="px-4 py-4">
+                                                <p>{person.grupo}</p>
+                                                <p className="text-[10px] text-slate-400 italic">{person.vinculo}</p>
+                                            </td>
+                                            <td className="px-4 py-4">
+                                                <span className="bg-slate-100 border border-slate-200 text-slate-600 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
+                                                    {person.finalidade}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-4 text-right">
+                                                <button 
+                                                    onClick={() => onSelect(person)}
+                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-[10px] font-bold transition-all"
+                                                >
+                                                    <Icon name="FileText" size={14} /> Histórico
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    )) : (
+                                        <tr><td colSpan={7} className="p-12 text-center text-slate-400 italic">Nenhuma ficha encontrada para hoje.</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const HistoryView = ({ person, onBack }) => {
+            const [history, setHistory] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+
+            useEffect(() => {
+                if (window.google && google.script && google.script.run) {
+                    google.script.run
+                        .withSuccessHandler((res) => { 
+                            if (res && res.error) setError(res.error);
+                            else setHistory(res || []); 
+                            setLoading(false); 
+                        })
+                        .withFailureHandler((err) => {
+                            setError(err.message || "Erro ao buscar histórico.");
+                            setLoading(false);
+                        })
+                        .getHistoryByCpf(person.cpf);
+                } else {
+                    setError("Conexão indisponível (fora do ambiente Google).");
+                    setLoading(false);
+                }
+            }, [person.cpf]);
+
+            return (
+                <div className="space-y-6">
+                    <div className="flex items-center justify-between no-print">
+                        <button onClick={onBack} className="flex items-center gap-2 text-indigo-600 hover:text-indigo-800 font-bold">
+                            <Icon name="ArrowLeft" size={18} /> Voltar
+                        </button>
+                        <button onClick={() => window.print()} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-xl shadow-lg font-bold flex items-center gap-2">
+                            <Icon name="Printer" size={18} /> Imprimir PDF
+                        </button>
+                    </div>
+
+                    <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden no-print">
+                        <div className="bg-indigo-900 p-8 text-white flex flex-col md:flex-row justify-between items-center gap-6">
+                            <div className="flex items-center gap-5">
+                                <div className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center text-2xl font-bold border border-white/30">
+                                    {(person.name || 'M').charAt(0)}
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-bold leading-none">{person.name}</h2>
+                                    <p className="text-indigo-200 mt-2 font-medium">{person.posto} • SARAM: {person.saram}</p>
+                                </div>
+                            </div>
+                            <div className="bg-white/10 p-4 rounded-2xl border border-white/20 backdrop-blur-sm">
+                                <p className="text-[10px] uppercase font-bold text-indigo-300 tracking-widest mb-1">CPF E NASCIMENTO</p>
+                                <p className="font-mono text-sm font-bold">{person.cpf} | {person.dt_nascimento}</p>
+                            </div>
+                        </div>
+
+                        <div className="p-8">
+                            <div className="flex items-center gap-3 mb-8 pb-4 border-b border-slate-100">
+                                <Icon name="History" size={24} className="text-indigo-600" />
+                                <h3 className="text-xl font-bold text-slate-800">Histórico de Juntas de Saúde</h3>
+                            </div>
+
+                            {loading ? (
+                                <div className="flex flex-col items-center py-20 gap-4"><div className="spinner"></div><p className="text-slate-400">Consultando registros históricos...</p></div>
+                            ) : error ? (
+                                <div className="bg-amber-50 p-6 rounded-2xl text-amber-800 border border-amber-200 flex items-center gap-3"><Icon name="AlertCircle" /><span>{error}</span></div>
+                            ) : history.length > 0 ? (
+                                <div className="space-y-6">
+                                    {history.map((h, i) => (
+                                        <div key={i} className="relative border-l-4 border-indigo-500 pl-8 py-2">
+                                            <div className="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-indigo-600 border-4 border-white"></div>
+                                            <div className="flex flex-col md:flex-row justify-between items-start mb-2 gap-4">
+                                                <div><p className="text-indigo-900 font-bold text-lg">{h.date}</p><p className="text-slate-500 font-bold uppercase text-[10px]">{h.type}</p></div>
+                                                <div className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-black uppercase">{h.result}</div>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs mb-2">
+                                                <p><span className="text-slate-400 font-bold uppercase text-[9px]">Médico:</span> {h.doctor}</p>
+                                                <p><span className="text-slate-400 font-bold uppercase text-[9px]">Local:</span> {h.location}</p>
+                                            </div>
+                                            <div className="p-3 bg-slate-50 border border-slate-100 rounded-lg"><p className="text-slate-700 italic text-xs leading-relaxed">"{h.observations}"</p></div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-center py-16 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+                                    <Icon name="AlertCircle" className="mx-auto text-slate-300 mb-4" size={48} />
+                                    <p className="text-slate-500 font-bold">Nenhum histórico encontrado para este CPF.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <PrintTemplate person={person} history={history} />
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [view, setView] = useState('DASHBOARD');
+            const [data, setData] = useState([]);
+            const [selectedPerson, setSelectedPerson] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [selectedIds, setSelectedIds] = useState([]);
+            const [error, setError] = useState(null);
+
+            useEffect(() => {
+                if (window.google && google.script && google.script.run) {
+                    google.script.run
+                        .withSuccessHandler((res) => { 
+                            if(res && res.error) setError(res.error);
+                            else setData(res || []); 
+                            setLoading(false); 
+                        })
+                        .withFailureHandler((err) => {
+                            setError(err.message || "Falha ao carregar dados do servidor.");
+                            setLoading(false);
+                        })
+                        .getDailyData();
+                } else {
+                    setError("Esta aplicação deve ser executada dentro do Google Apps Script.");
+                    setLoading(false);
+                }
+            }, []);
+
+            const toggleSelect = useCallback((id) => {
+                setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+            }, []);
+
+            const toggleSelectAll = useCallback((allIds) => {
+                setSelectedIds(prev => prev.length === allIds.length ? [] : allIds);
+            }, []);
+
+            const handleBulkPrint = () => {
+                if(selectedIds.length === 0) return;
+                const firstSelected = data.find(p => p.id === selectedIds[0]);
+                setSelectedPerson(firstSelected);
+                setView('HISTORY');
+                setTimeout(() => window.print(), 1000);
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    <header className="no-print bg-indigo-900 text-white h-16 flex items-center px-6 sticky top-0 z-50">
+                        <div className="max-w-7xl mx-auto w-full flex items-center gap-3 cursor-pointer" onClick={() => setView('DASHBOARD')}>
+                            <Icon name="ShieldCheck" size={24} />
+                            <h1 className="text-xl font-black uppercase tracking-tight">SIS-SAUDE <span className="font-light opacity-60">| FAB</span></h1>
+                        </div>
+                    </header>
+                    <main className="flex-1 max-w-7xl mx-auto px-6 py-8 w-full">
+                        {view === 'DASHBOARD' ? (
+                            <Dashboard data={data} loading={loading} error={error} searchTerm={searchTerm} setSearchTerm={setSearchTerm} 
+                                onSelect={(p) => { setSelectedPerson(p); setView('HISTORY'); }}
+                                selectedIds={selectedIds} toggleSelect={toggleSelect} toggleSelectAll={toggleSelectAll} onBulkPrint={handleBulkPrint} />
+                        ) : (
+                            <HistoryView person={selectedPerson} onBack={() => setView('DASHBOARD')} />
+                        )}
+                    </main>
+                    <footer className="no-print bg-white border-t border-slate-200 py-6 text-center text-slate-400 text-[10px] font-bold uppercase">
+                        <p>© 2024 SIS-SAUDE - Comando da Aeronáutica</p>
+                    </footer>
+                </div>
+            );
+        };
+
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<App />);
+    </script>
+</body>
+</html>
