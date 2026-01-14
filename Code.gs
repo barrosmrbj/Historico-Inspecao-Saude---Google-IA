@@ -2,101 +2,162 @@
 function doGet() {
   return HtmlService.createTemplateFromFile('index')
     .evaluate()
-    .setTitle('SIS-SAUDE | Histórico de Inspeção')
+    .setTitle('SIS-SAUDE | Dashboard')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-const IDS = {
-  DAILY: "1CWXzs_J1tTITIZ52_0t02tUb8tBewKSBNWNyaHb6z8M",
-  HISTORY: "1Odv6OclUAie8LCFIpI5iQsuoUFLq6ChUimqiGPVjjjU"
+const CONFIG = {
+  ID_BANCO_DADOS: "1CWXzs_J1tTITIZ52_0t02tUb8tBewKSBNWNyaHb6z8M",
+  ID_BANCO_FICHAS_JULGADAS: "1Odv6OclUAie8LCFIpI5iQsuoUFLq6ChUimqiGPVjjjU"
 };
 
+function calculateAge(birthDate) {
+  if (!(birthDate instanceof Date) || isNaN(birthDate.getTime())) return "N/A";
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+}
+
+function formatDataCompare(val) {
+  if (val instanceof Date) return Utilities.formatDate(val, "GMT-3", "dd/MM/yyyy");
+  if (typeof val === 'string' && val.includes("/")) return val.split(" ")[0].trim();
+  return String(val || "").split(" ")[0].trim();
+}
+
 /**
- * Busca dados de inspeção do dia no banco primário
- * Mapeamento baseado nas colunas fornecidas:
- * Name: row[11] (Col L)
- * Nascimento: row[5] (Col F)
- * Posto: row[8] (Col I)
- * Quadro: row[9] (Col J)
- * Especialidade: row[10] (Col K)
- * Saram: row[12] (Col M)
- * CPF: row[6] (Col G)
- * OM: row[13] (Col N)
- * Grupo: row[21] (Col V)
- * Vinculo: row[15] (Col P)
- * Finalidade: row[16] (Col Q)
+ * Busca dados diários com filtro de data opcional
  */
-function getDailyData() {
+function getDailyData(filterDateIso) {
   try {
-    const ss = SpreadsheetApp.openById(IDS.DAILY);
-    const sheet = ss.getSheetByName("FICHAS");
-    if (!sheet) throw new Error("Aba 'FICHAS' não encontrada no banco diário.");
-    
+    const ss = SpreadsheetApp.openById(CONFIG.ID_BANCO_DADOS);
+    const sheet = ss.getSheetByName("FICHAS") || ss.getSheets()[0];
     const data = sheet.getDataRange().getValues();
     if (data.length <= 1) return [];
 
-    const today = new Date();
-    const todayStr = today.toLocaleDateString('pt-BR');
-    
-    // Filtrando por data do dia (Coluna F / row[5])
-    return data.slice(1).filter(row => {
-      if (!row[5]) return false;
-      const d = new Date(row[5]);
-      return d.toLocaleDateString('pt-BR') === todayStr;
+    let targetDate = null;
+    if (filterDateIso) {
+      const parts = filterDateIso.split('-');
+      targetDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
+    } else {
+      targetDate = formatDataCompare(new Date());
+    }
+
+    const result = data.slice(1).filter(row => {
+      const rowDate = formatDataCompare(row[0]);
+      return !filterDateIso || rowDate === targetDate;
     }).map((row, index) => ({
       id: 'row-' + (index + 1),
-      name: row[11],            // Col L
-      dt_nascimento: row[5] ? new Date(row[5]).toLocaleDateString('pt-BR') : 'N/A', // Col F
-      posto: row[8],           // Col I
-      quadro: row[9],          // Col J
-      especialidade: row[10],  // Col K
-      saram: row[12],          // Col M
-      cpf: row[6],             // Col G
-      om: row[13],             // Col N
-      grupo: row[21],          // Col V
-      vinculo: row[15],        // Col P
-      finalidade: row[16]      // Col Q
+      dt_inspecao: formatDataCompare(row[0]),
+      name: String(row[11] || "NOME NÃO INFORMADO"),
+      posto: String(row[8] || ""),
+      quadro: String(row[9] || ""),
+      especialidade: String(row[10] || ""),
+      dt_nascimento: formatDataCompare(row[4]),
+      naturalidade: String(row[5] || ""),
+      idade: calculateAge(row[4] instanceof Date ? row[4] : new Date(row[4])),
+      cpf: String(row[6] || "").replace(/\D/g, ''),
+      saram: String(row[12] || ""),
+      om: String(row[13] || ""),
+      vinculo: String(row[15] || ""), // Coluna P
+      grupo: String(row[21] || ""),   // Coluna V
+      finalidade: String(row[16] || "") // Coluna Q
     }));
+
+    result.sort((a, b) => {
+      const dateA = a.dt_inspecao.split('/').reverse().join('');
+      const dateB = b.dt_inspecao.split('/').reverse().join('');
+      return dateB.localeCompare(dateA);
+    });
+
+    return result;
   } catch (e) {
     return { error: e.toString() };
   }
 }
 
 /**
- * Busca histórico completo de um CPF no banco de fichas julgadas
+ * Busca histórico detalhado baseado em CPF no banco de Fichas Julgadas
  */
 function getHistoryByCpf(cpf) {
   try {
     if (!cpf) return [];
-    
-    const ss = SpreadsheetApp.openById(IDS.HISTORY);
-    const sheet = ss.getSheetByName("FICHAS");
-    if (!sheet) throw new Error("Aba 'FICHAS' não encontrada no histórico.");
-    
+    const ss = SpreadsheetApp.openById(CONFIG.ID_BANCO_FICHAS_JULGADAS);
+    const sheet = ss.getSheetByName("FICHAS") || ss.getSheets()[0];
     const data = sheet.getDataRange().getValues();
     const targetCpf = String(cpf).replace(/\D/g, '');
     
-    const history = data.slice(1)
+    return data.slice(1)
       .filter(row => {
-        const rowCpf = String(row[6] || '').replace(/\D/g, '');
-        return rowCpf === targetCpf;
+        const rowCpf = String(row[6] || "").replace(/\D/g, '');
+        const parecer = String(row[28] || "").trim();
+        return rowCpf === targetCpf && parecer !== "";
       })
       .map(row => ({
-        date: row[5] ? new Date(row[5]).toLocaleDateString('pt-BR') : 'N/A',
-        type: row[16] || 'Inspeção',
-        result: row[10] || 'N/A',
-        doctor: row[11] || 'N/A',
-        location: row[12] || 'N/A',
-        observations: row[13] || 'N/A'
+        date: formatDataCompare(row[0]),
+        parecer: String(row[28] || "N/A"),
+        cid_tratamento: String(row[29] || "").trim(),
+        cid_restricao: String(row[30] || "").trim(),
+        cid_incapaz: String(row[31] || "").trim(),
+        obs_dis: String(row[32] || "").trim(),
+        obs_cartao: String(row[33] || "").trim(),
+        n_sessao: String(row[34] || ""),
+        dt_sessao: formatDataCompare(row[35]),
+        validade: formatDataCompare(row[36]),
+        type: String(row[16] || "Inspeção")
       }))
       .sort((a, b) => {
-        // Ordenação decrescente por data
-        const dateA = a.date.split('/').reverse().join('-');
-        const dateB = b.date.split('/').reverse().join('-');
-        return dateB.localeCompare(dateA);
+        const dA = a.date.split('/').reverse().join('');
+        const dB = b.date.split('/').reverse().join('');
+        return dB.localeCompare(dA);
       });
+  } catch (e) {
+    return { error: e.toString() };
+  }
+}
 
-    return history;
+/**
+ * Busca múltiplos históricos em lote para otimizar processamento
+ */
+function getMultipleHistoryData(cpfs) {
+  try {
+    const results = {};
+    const ss = SpreadsheetApp.openById(CONFIG.ID_BANCO_FICHAS_JULGADAS);
+    const sheet = ss.getSheetByName("FICHAS") || ss.getSheets()[0];
+    const data = sheet.getDataRange().getValues();
+    const rows = data.slice(1);
+
+    cpfs.forEach(cpf => {
+      const targetCpf = String(cpf).replace(/\D/g, '');
+      results[cpf] = rows
+        .filter(row => {
+          const rowCpf = String(row[6] || "").replace(/\D/g, '');
+          const parecer = String(row[28] || "").trim();
+          return rowCpf === targetCpf && parecer !== "";
+        })
+        .map(row => ({
+          date: formatDataCompare(row[0]),
+          parecer: String(row[28] || "N/A"),
+          cid_tratamento: String(row[29] || "").trim(),
+          cid_restricao: String(row[30] || "").trim(),
+          cid_incapaz: String(row[31] || "").trim(),
+          obs_dis: String(row[32] || "").trim(),
+          obs_cartao: String(row[33] || "").trim(),
+          n_sessao: String(row[34] || ""),
+          dt_sessao: formatDataCompare(row[35]),
+          validade: formatDataCompare(row[36]),
+          type: String(row[16] || "Inspeção")
+        }))
+        .sort((a, b) => {
+          const dA = a.date.split('/').reverse().join('');
+          const dB = b.date.split('/').reverse().join('');
+          return dB.localeCompare(dA);
+        });
+    });
+    return results;
   } catch (e) {
     return { error: e.toString() };
   }

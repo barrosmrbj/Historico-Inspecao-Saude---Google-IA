@@ -4,224 +4,355 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SIS-SAUDE Dashboard</title>
+    <title>SIS-SAUDE | Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- React and ReactDOM from CDN (UMD) - Versão 18 estável -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-    
-    <!-- Lucide React Icons (UMD) - Deve vir após o React -->
-    <script src="https://unpkg.com/lucide-react" crossorigin></script>
-    
-    <!-- Babel para transpilação JSX -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
-
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        @media print {
-            .no-print { display: none !important; }
-            .print-only { display: block !important; }
-            .page-break { page-break-after: always; }
-        }
-        .print-only { display: none; }
+        body { font-family: 'Inter', sans-serif; font-size: 16px; overflow-x: hidden; }
+        @page { size: A4; margin: 0; }
+        
         .spinner {
-            border: 3px solid rgba(49, 46, 129, 0.1);
+            border: 3px solid rgba(79, 70, 229, 0.1);
             border-radius: 50%;
-            border-top: 3px solid #312e81;
-            width: 24px;
-            height: 24px;
-            animation: spin 1s linear infinite;
+            border-top: 3px solid #4f46e5;
+            width: 24px; height: 24px;
+            animation: spin 0.8s linear infinite;
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .parecer-badge {
+            background-color: #fef3c7;
+            border: 1px solid #f59e0b;
+            color: #92400e;
+            font-weight: 800;
+            padding: 1px 4px;
+            border-radius: 3px;
+            text-transform: uppercase;
+            font-size: 6pt;
         }
+
+        .progress-container {
+            width: 100%;
+            background-color: #e2e8f0;
+            border-radius: 9999px;
+            height: 12px;
+            overflow: hidden;
+            border: 1px solid #cbd5e1;
+        }
+        .progress-bar {
+            background: linear-gradient(90deg, #4f46e5, #818cf8);
+            height: 100%;
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Container de renderização A4 exato para evitar extrapolação */
+        .pdf-container-render {
+            width: 210mm;
+            background: white;
+            margin: 0;
+            padding: 0;
+        }
+
+        .pdf-content {
+            background: white;
+            color: black;
+            padding: 10mm 15mm;
+            width: 210mm;
+            height: 296.5mm; /* Levemente menor que 297mm para evitar página em branco extra */
+            box-sizing: border-box;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .pdf-page-separator {
+            page-break-after: always;
+        }
+        
+        .pdf-header-1 { font-size: 10pt; }
+        .pdf-header-2 { font-size: 9pt; }
+        .pdf-header-3 { font-size: 8pt; }
+        .pdf-title-box { font-size: 9pt; }
+        .pdf-text-main { font-size: 7.5pt; line-height: 1.25; }
+        .pdf-text-small { font-size: 6.5pt; }
+
+        .page-break-avoid {
+            page-break-inside: avoid !important; 
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.2.3",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "react/": "https://esm.sh/react@^19.2.3/"
-  }
-}
-</script>
 </head>
-<body class="bg-slate-50 text-slate-900">
+<body class="bg-slate-50 text-slate-900 custom-scrollbar">
     <div id="root"></div>
-
     <script type="text/babel">
-        const { useState, useEffect, useMemo, useCallback } = React;
+        const { useState, useEffect, useMemo, useCallback, Fragment } = React;
 
-        /**
-         * Componente Icone Robusto
-         * Acessa a biblioteca LucideReact via objeto global (UMD).
-         */
-        const Icon = ({ name, size = 20, className = "" }) => {
-            if (typeof LucideReact === 'undefined') return null;
-            const LucideIcon = LucideReact[name] || LucideReact.Shield;
-            if (!LucideIcon) return null;
-            return <LucideIcon size={size} className={className} />;
+        const formatCPF = (cpf) => {
+            const clean = String(cpf).replace(/\D/g, '');
+            if (clean.length !== 11) return clean;
+            return clean.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
         };
 
-        // --- COMPONENTES DE INTERFACE ---
+        const truncate = (str, n = 30) => {
+            if (!str) return "";
+            return (str.length > n) ? str.substr(0, n-1) + '...' : str;
+        };
 
-        const PrintTemplate = ({ person, history }) => (
-            <div className="print-only bg-white p-10 text-black min-h-screen page-break">
-                <div className="flex flex-col items-center text-center mb-8 border-b-2 border-black pb-6">
-                    <h1 className="text-xl font-bold uppercase">Ministério da Defesa</h1>
-                    <h2 className="text-lg font-bold uppercase">Comando da Aeronáutica</h2>
-                    <h3 className="text-md uppercase font-semibold">Diretoria de Saúde</h3>
-                </div>
-                <div className="mb-6">
-                    <h2 className="text-center text-lg font-bold bg-gray-100 p-2 uppercase border border-black mb-4">
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const icons = {
+                Search: <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />,
+                Printer: <path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z" />,
+                ShieldCheck: <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />,
+                Calendar: <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 00-2 2z" />,
+                Download: <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />,
+                History: <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />,
+                Layers: <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />,
+                Filter: <path d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2.586a1 1 0 0 1-.293.707l-6.414 6.414a1 1 0 0 0-.293.707V17l-4 4v-6.586a1 1 0 0 0-.293-.707L3.293 7.293A1 1 0 0 1 3 6.586V4z" />,
+                // Fix: Eye icon must wrap multiple elements in a fragment
+                Eye: <Fragment><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></Fragment>,
+                X: <path d="M18 6L6 18M6 6l12 12" />
+            };
+            return (
+                <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`${className}`}>
+                    {icons[name] || <circle cx="12" cy="12" r="10" />}
+                </svg>
+            );
+        };
+
+        const PrintPage = ({ person, history, isLast = true }) => (
+            <div className={`pdf-content militar-entry ${!isLast ? 'pdf-page-separator' : ''}`} 
+                 data-person-header={`${person.posto}/${person.quadro}/${person.especialidade} ${person.name}`}
+                 data-person-name={person.name}>
+                <div className="pdf-main-header">
+                    <div className="flex flex-col items-center text-center mb-3 border-b border-black pb-1">
+                        <h1 className="pdf-header-1 font-bold uppercase">Ministério da Defesa</h1>
+                        <h2 className="pdf-header-2 font-bold uppercase">Comando da Aeronáutica</h2>
+                        <h3 className="pdf-header-3 uppercase font-bold">Hospital de Aeronáutica de Manaus</h3>
+                    </div>
+                    
+                    <h2 className="text-center pdf-title-box font-bold bg-slate-100 p-1 uppercase border border-black mb-3">
                         Histórico de Inspeção de Saúde
                     </h2>
-                    <div className="grid grid-cols-2 gap-x-10 gap-y-2 border border-black p-4 text-xs">
+
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 border border-black p-2 pdf-text-main mb-3">
                         <p><strong>NOME:</strong> {person.name}</p>
                         <p><strong>SARAM:</strong> {person.saram}</p>
-                        <p><strong>POSTO:</strong> {person.posto}</p>
-                        <p><strong>CPF:</strong> {person.cpf}</p>
-                        <p><strong>QUADRO/ESP:</strong> {person.quadro} - {person.especialidade}</p>
+                        <p><strong>POSTO/QUADRO/ESP:</strong> {person.posto} {person.quadro} {person.especialidade}</p>
+                        <p><strong>CPF:</strong> {formatCPF(person.cpf)}</p>
+                        <p><strong>DATA NASC.:</strong> {person.dt_nascimento} ({person.idade} anos)</p>
                         <p><strong>OM:</strong> {person.om}</p>
                         <p><strong>VÍNCULO:</strong> {person.vinculo}</p>
-                        <p><strong>DATA NASC.:</strong> {person.dt_nascimento}</p>
+                        <p><strong>NATURALIDADE:</strong> {person.naturalidade}</p>
                     </div>
                 </div>
-                <div className="space-y-4">
-                    <h3 className="font-bold border-b border-black pb-1 uppercase text-sm">Registros de Inspeção (Ordem Decrescente)</h3>
+
+                <div className="space-y-1.5">
+                    <h3 className="font-bold border-b border-black pb-0.5 uppercase pdf-header-3 mb-1 page-break-avoid">Registros de Fichas Julgadas</h3>
                     {history && history.length > 0 ? history.map((h, i) => (
-                        <div key={i} className="border border-gray-300 p-3 mb-2 text-xs">
-                            <div className="flex justify-between font-bold mb-1">
+                        <div key={i} className="border border-black p-1.5 mb-1.5 pdf-text-main page-break-avoid">
+                            <div className="flex justify-between items-center mb-1 font-bold bg-slate-50 p-1 border-b border-black">
                                 <span>DATA: {h.date}</span>
-                                <span>PARECER: {h.result}</span>
+                                <span className="parecer-badge">PARECER: {h.parecer}</span>
+                                <span>SESSÃO: {h.n_sessao} ({h.dt_sessao})</span>
                             </div>
-                            <p><strong>FINALIDADE:</strong> {h.type}</p>
-                            <p><strong>LOCAL:</strong> {h.location} | <strong>MÉDICO:</strong> {h.doctor}</p>
-                            <p className="mt-1 italic">"{h.observations}"</p>
+                            <div className="grid grid-cols-3 gap-1 mb-1 font-semibold pdf-text-small italic text-slate-700">
+                                {h.cid_tratamento && <span>CID TRAT.: {h.cid_tratamento}</span>}
+                                {h.cid_restricao && <span>CID RESTR.: {h.cid_restricao}</span>}
+                                {h.cid_incapaz && <span>CID INCAP.: {h.cid_incapaz}</span>}
+                            </div>
+                            <p className="mb-0.5"><strong>FINALIDADE:</strong> {h.type} | <strong>VALIDADE:</strong> {h.validade}</p>
+                            <div className="mt-0.5 border-t border-dotted border-slate-300 pt-0.5">
+                                <div className="grid grid-cols-2 gap-3 pdf-text-small">
+                                    {h.obs_dis && <p><strong>OBS DIS:</strong> {h.obs_dis}</p>}
+                                    {h.obs_cartao && <p><strong>OBS CARTÃO:</strong> {h.obs_cartao}</p>}
+                                </div>
+                            </div>
                         </div>
-                    )) : <p className="text-center italic mt-10">Nenhum registro encontrado no histórico.</p>}
+                    )) : <p className="text-center italic mt-4 pdf-text-main text-slate-500">Nenhum registro histórico julgado encontrado para este CPF.</p>}
                 </div>
             </div>
         );
 
-        const Dashboard = ({ data, loading, searchTerm, setSearchTerm, onSelect, onBulkPrint, selectedIds, toggleSelect, toggleSelectAll, error }) => {
+        const PreviewModal = ({ isOpen, onClose, data }) => {
+            if (!isOpen || !data) return null;
+            return (
+                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+                    <div className="bg-slate-200 w-full max-w-4xl h-[90vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col animate-in zoom-in-95 duration-200">
+                        <div className="bg-indigo-950 text-white p-6 flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="p-2 bg-indigo-600 rounded-lg"><Icon name="Eye" size={24}/></div>
+                                <div>
+                                    <h3 className="font-black uppercase tracking-tight">Prévia do Histórico</h3>
+                                    <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest leading-none mt-1">{data.person.name}</p>
+                                </div>
+                            </div>
+                            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-all text-white/50 hover:text-white">
+                                <Icon name="X" size={24} />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-8 bg-slate-400/20">
+                            <div className="bg-white shadow-lg mx-auto w-fit">
+                                <PrintPage person={data.person} history={data.historyData} />
+                            </div>
+                        </div>
+                        <div className="bg-white p-4 border-t border-slate-200 flex justify-end">
+                            <button onClick={onClose} className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black rounded-xl text-sm transition-all">FECHAR VISUALIZAÇÃO</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const Dashboard = ({ 
+            data, loading, searchTerm, setSearchTerm, filterDate, setFilterDate, 
+            finalidadeFilter, setFinalidadeFilter, onBulkPrint, selectedIds, 
+            toggleSelect, toggleSelectAll, generatedResults, onDownloadOne, onClearResults, onDownloadAll, onPreview
+        }) => {
             const filtered = useMemo(() => {
                 if (!Array.isArray(data)) return [];
-                return data.filter(p => 
-                    (p.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-                    (p.saram && String(p.saram).includes(searchTerm))
-                );
-            }, [data, searchTerm]);
+                return data.filter(p => {
+                    const matchesSearch = (p.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+                                        (p.saram && String(p.saram).includes(searchTerm)) ||
+                                        (p.cpf && String(p.cpf).includes(searchTerm));
+                    const matchesFinalidade = !finalidadeFilter || p.finalidade === finalidadeFilter;
+                    return matchesSearch && matchesFinalidade;
+                }).sort((a, b) => {
+                    const dateA = a.dt_inspecao.split('/').reverse().join('');
+                    const dateB = b.dt_inspecao.split('/').reverse().join('');
+                    return dateB.localeCompare(dateA);
+                });
+            }, [data, searchTerm, finalidadeFilter]);
 
-            if (error) {
-                return (
-                    <div className="bg-red-50 border border-red-200 text-red-700 p-6 rounded-2xl flex items-center gap-4">
-                        <Icon name="AlertTriangle" size={24} />
-                        <div><p className="font-bold">Erro de Conexão</p><p className="text-sm">{error}</p></div>
-                    </div>
-                );
-            }
+            const finalidades = useMemo(() => {
+                if (!Array.isArray(data)) return [];
+                const set = new Set(data.map(p => p.finalidade).filter(Boolean));
+                return Array.from(set).sort((a, b) => a.localeCompare(b));
+            }, [data]);
 
             return (
                 <div className="space-y-6">
-                    <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                        <div>
-                            <h2 className="text-3xl font-bold text-indigo-950">Inspeções de Hoje</h2>
-                            <p className="text-slate-500 mt-1">Militares em avaliação - {new Date().toLocaleDateString('pt-BR')}</p>
+                    <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6">
+                        <div className="flex-1">
+                            <h2 className="text-3xl font-black text-indigo-950 tracking-tighter mb-1 uppercase">IMPRESSÃO DE HISTÓRICO</h2>
+                            <p className="text-slate-500 flex items-center gap-2 text-xs font-bold">
+                                <Icon name="ShieldCheck" size={16} className="text-indigo-600" />
+                                {filterDate ? `Inspeções de ${filterDate.split('-').reverse().join('/')}` : "Movimentação Diária de Inspeções"}
+                            </p>
                         </div>
-                        <button 
-                            disabled={selectedIds.length === 0}
-                            onClick={onBulkPrint}
-                            className={`flex items-center gap-2 px-6 py-3 rounded-xl shadow-lg font-bold transition-all ${selectedIds.length > 0 ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                        >
-                            <Icon name="Printer" size={20} />
-                            Imprimir Selecionados ({selectedIds.length})
-                        </button>
-                    </div>
-
-                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-                        <div className="relative">
-                            <Icon name="Search" className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                            <input 
-                                type="text"
-                                placeholder="Buscar por Nome ou SARAM..."
-                                className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                            />
+                        <div className="flex flex-wrap gap-3 items-center bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
+                            <div className="flex flex-col">
+                                <span className="text-[9px] font-black text-indigo-900 uppercase ml-1 mb-1 tracking-widest">Data de Referência</span>
+                                <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs outline-none focus:border-indigo-500 transition-all font-bold" />
+                            </div>
+                            <button disabled={selectedIds.length === 0} onClick={() => onBulkPrint()} className={`flex items-center gap-2 px-6 py-3 rounded-xl shadow-lg font-black transition-all text-sm ${selectedIds.length > 0 ? 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}>
+                                <Icon name="Printer" size={18} /> Gerar Históricos ({selectedIds.length})
+                            </button>
                         </div>
                     </div>
+                    
+                    <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-200">
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                            <div className="lg:col-span-8 relative">
+                                <Icon name="Search" className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
+                                <input type="text" placeholder="Filtrar por Nome, SARAM ou CPF..." className="w-full pl-11 pr-5 py-2.5 bg-slate-50 border border-slate-100 rounded-2xl focus:border-indigo-500 outline-none text-base font-medium" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                            </div>
+                            <div className="lg:col-span-4 relative">
+                                <Icon name="Filter" className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                                <select 
+                                    className="w-full pl-11 pr-5 py-2.5 bg-slate-50 border border-slate-100 rounded-2xl focus:border-indigo-500 outline-none text-sm font-bold appearance-none cursor-pointer"
+                                    value={finalidadeFilter}
+                                    onChange={(e) => setFinalidadeFilter(e.target.value)}
+                                >
+                                    <option value="">FILTRAR POR FINALIDADE (TODAS)</option>
+                                    {finalidades.map(f => <option key={f} value={f}>{truncate(f, 32)}</option>)}
+                                </select>
+                            </div>
+                        </div>
 
-                    <div className="bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden">
+                        {generatedResults.length > 0 && (
+                            <div className="bg-indigo-950 text-white p-5 rounded-2xl shadow-xl mt-4 animate-in slide-in-from-top-4 duration-500">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="font-black text-sm flex items-center gap-2 uppercase tracking-tight">
+                                        <Icon name="History" className="text-indigo-400" />
+                                        Processados para Download ({generatedResults.length})
+                                    </h3>
+                                    <div className="flex gap-2">
+                                        {generatedResults.length >= 2 && (
+                                            <button onClick={onDownloadAll} className="flex items-center gap-2 text-[10px] font-black bg-indigo-600 hover:bg-white hover:text-indigo-900 px-4 py-2 rounded-lg transition-all border border-indigo-500 shadow-lg">
+                                                <Icon name="Layers" size={14} /> DOWNLOAD LOTE UNIFICADO
+                                            </button>
+                                        )}
+                                        <button onClick={onClearResults} className="text-[10px] font-black text-red-300 hover:text-white px-3 py-1.5">Limpar</button>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+                                    {generatedResults.map((res, idx) => (
+                                        <div key={idx} className="flex items-center justify-between p-2.5 bg-white/10 border border-white/5 rounded-xl text-xs hover:bg-white/20 transition-all cursor-default group">
+                                            <span className="font-bold truncate max-w-[120px] uppercase">{res.person.name}</span>
+                                            <div className="flex gap-1">
+                                                <button onClick={() => onPreview(res)} className="text-indigo-300 hover:text-white p-1" title="Ver Prévia"><Icon name="Eye" size={16}/></button>
+                                                <button onClick={() => onDownloadOne(res)} className="text-indigo-400 group-hover:text-white p-1" title="Download"><Icon name="Download" size={16}/></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
                         <div className="overflow-x-auto">
-                            <table className="w-full text-left">
-                                <thead className="bg-slate-50 border-b border-slate-200">
-                                    <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                                        <th className="px-4 py-4 w-10">
-                                            <input 
-                                                type="checkbox" 
-                                                className="w-4 h-4 accent-indigo-600"
-                                                checked={selectedIds.length === filtered.length && filtered.length > 0}
-                                                onChange={() => toggleSelectAll(filtered.map(f => f.id))}
-                                            />
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                                        <th className="px-5 py-4 w-14 text-center">
+                                            <input type="checkbox" className="w-4 h-4 accent-indigo-600 cursor-pointer rounded" checked={selectedIds.length === filtered.length && filtered.length > 0} onChange={() => toggleSelectAll(filtered.map(f => f.id))} />
                                         </th>
-                                        <th className="px-4 py-4">Militar (Posto/Quadro/Nascimento)</th>
-                                        <th className="px-4 py-4">Identificação (Saram/CPF)</th>
-                                        <th className="px-4 py-4">OM</th>
+                                        <th className="px-4 py-4">Data Insp.</th>
+                                        <th className="px-4 py-4">Militar</th>
                                         <th className="px-4 py-4">Grupo / Vínculo</th>
+                                        <th className="px-4 py-4">OM</th>
                                         <th className="px-4 py-4">Finalidade</th>
-                                        <th className="px-4 py-4 text-right">Ações</th>
+                                        <th className="px-4 py-4 text-center">Ação</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-200">
-                                    {loading ? (
-                                        [1,2,3].map(i => (
-                                            <tr key={i} className="animate-pulse"><td colSpan={7} className="p-8"><div className="h-4 bg-slate-200 rounded w-full"></div></td></tr>
-                                        ))
-                                    ) : filtered.length > 0 ? filtered.map((person) => (
-                                        <tr key={person.id} className="hover:bg-indigo-50/50 transition-colors text-xs">
-                                            <td className="px-4 py-4">
-                                                <input 
-                                                    type="checkbox" 
-                                                    className="w-4 h-4 accent-indigo-600"
-                                                    checked={selectedIds.includes(person.id)}
-                                                    onChange={() => toggleSelect(person.id)}
-                                                />
+                                <tbody className="divide-y divide-slate-50">
+                                    {loading ? [1,2,3,4,5].map(i => <tr key={i} className="animate-pulse"><td colSpan={7} className="p-6"><div className="h-4 bg-slate-100 rounded-full w-full"></div></td></tr>) : 
+                                    filtered.length > 0 ? filtered.map((p) => (
+                                        <tr key={p.id} className="hover:bg-indigo-50/30 transition-all text-sm">
+                                            <td className="px-5 py-3 text-center">
+                                                <input type="checkbox" className="w-4 h-4 accent-indigo-600 cursor-pointer rounded" checked={selectedIds.includes(p.id)} onChange={() => toggleSelect(p.id)} />
                                             </td>
-                                            <td className="px-4 py-4">
-                                                <p className="font-bold text-slate-900">{person.name}</p>
-                                                <p className="text-[10px] text-slate-500">{person.posto} • {person.quadro} ({person.especialidade})</p>
-                                                <p className="text-[9px] text-slate-400">Nasc: {person.dt_nascimento}</p>
+                                            <td className="px-4 py-3 font-bold text-indigo-700">{p.dt_inspecao}</td>
+                                            <td className="px-4 py-3">
+                                                <p className="font-black text-slate-900 uppercase text-xs leading-tight">{p.name}</p>
+                                                <p className="text-[10px] text-slate-500 font-bold uppercase">{p.posto} {p.quadro} {p.especialidade}</p>
                                             </td>
-                                            <td className="px-4 py-4 font-mono">
-                                                <p>S: {person.saram}</p>
-                                                <p>C: {person.cpf}</p>
+                                            <td className="px-4 py-3 text-xs">
+                                                <p className="font-black text-slate-700 uppercase">{p.grupo || '-'}</p>
+                                                <p className="text-slate-400 font-bold">{p.vinculo || '-'}</p>
                                             </td>
-                                            <td className="px-4 py-4 font-bold text-indigo-700">{person.om}</td>
-                                            <td className="px-4 py-4">
-                                                <p>{person.grupo}</p>
-                                                <p className="text-[10px] text-slate-400 italic">{person.vinculo}</p>
+                                            <td className="px-4 py-3">
+                                                <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-tight">{p.om}</span>
                                             </td>
-                                            <td className="px-4 py-4">
-                                                <span className="bg-slate-100 border border-slate-200 text-slate-600 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
-                                                    {person.finalidade}
-                                                </span>
+                                            <td className="px-4 py-3">
+                                                <span className="text-[10px] font-black text-indigo-900 border-l-2 border-indigo-600 pl-2 uppercase">{p.finalidade || '-'}</span>
                                             </td>
-                                            <td className="px-4 py-4 text-right">
-                                                <button 
-                                                    onClick={() => onSelect(person)}
-                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-[10px] font-bold transition-all"
-                                                >
-                                                    <Icon name="FileText" size={14} /> Histórico
-                                                </button>
+                                            <td className="px-4 py-3 text-center">
+                                                <div className="flex gap-2 justify-center">
+                                                    <button onClick={() => onPreview({ person: p })} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black hover:bg-indigo-100 hover:text-indigo-600 transition-all uppercase">Prévia</button>
+                                                    <button onClick={() => onBulkPrint([p.id])} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-[10px] font-black shadow-md hover:bg-indigo-700 transition-all uppercase">SINC.</button>
+                                                </div>
                                             </td>
                                         </tr>
-                                    )) : (
-                                        <tr><td colSpan={7} className="p-12 text-center text-slate-400 italic">Nenhuma ficha encontrada para hoje.</td></tr>
-                                    )}
+                                    )) : <tr><td colSpan={7} className="p-16 text-center text-slate-300 italic font-black uppercase text-xs tracking-widest">Nenhum registro encontrado.</td></tr>}
                                 </tbody>
                             </table>
                         </div>
@@ -230,169 +361,249 @@
             );
         };
 
-        const HistoryView = ({ person, onBack }) => {
-            const [history, setHistory] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [error, setError] = useState(null);
-
-            useEffect(() => {
-                if (window.google && google.script && google.script.run) {
-                    google.script.run
-                        .withSuccessHandler((res) => { 
-                            if (res && res.error) setError(res.error);
-                            else setHistory(res || []); 
-                            setLoading(false); 
-                        })
-                        .withFailureHandler((err) => {
-                            setError(err.message || "Erro ao buscar histórico.");
-                            setLoading(false);
-                        })
-                        .getHistoryByCpf(person.cpf);
-                } else {
-                    setError("Conexão indisponível (fora do ambiente Google).");
-                    setLoading(false);
-                }
-            }, [person.cpf]);
-
-            return (
-                <div className="space-y-6">
-                    <div className="flex items-center justify-between no-print">
-                        <button onClick={onBack} className="flex items-center gap-2 text-indigo-600 hover:text-indigo-800 font-bold">
-                            <Icon name="ArrowLeft" size={18} /> Voltar
-                        </button>
-                        <button onClick={() => window.print()} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-xl shadow-lg font-bold flex items-center gap-2">
-                            <Icon name="Printer" size={18} /> Imprimir PDF
-                        </button>
-                    </div>
-
-                    <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden no-print">
-                        <div className="bg-indigo-900 p-8 text-white flex flex-col md:flex-row justify-between items-center gap-6">
-                            <div className="flex items-center gap-5">
-                                <div className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center text-2xl font-bold border border-white/30">
-                                    {(person.name || 'M').charAt(0)}
-                                </div>
-                                <div>
-                                    <h2 className="text-2xl font-bold leading-none">{person.name}</h2>
-                                    <p className="text-indigo-200 mt-2 font-medium">{person.posto} • SARAM: {person.saram}</p>
-                                </div>
-                            </div>
-                            <div className="bg-white/10 p-4 rounded-2xl border border-white/20 backdrop-blur-sm">
-                                <p className="text-[10px] uppercase font-bold text-indigo-300 tracking-widest mb-1">CPF E NASCIMENTO</p>
-                                <p className="font-mono text-sm font-bold">{person.cpf} | {person.dt_nascimento}</p>
-                            </div>
-                        </div>
-
-                        <div className="p-8">
-                            <div className="flex items-center gap-3 mb-8 pb-4 border-b border-slate-100">
-                                <Icon name="History" size={24} className="text-indigo-600" />
-                                <h3 className="text-xl font-bold text-slate-800">Histórico de Juntas de Saúde</h3>
-                            </div>
-
-                            {loading ? (
-                                <div className="flex flex-col items-center py-20 gap-4"><div className="spinner"></div><p className="text-slate-400">Consultando registros históricos...</p></div>
-                            ) : error ? (
-                                <div className="bg-amber-50 p-6 rounded-2xl text-amber-800 border border-amber-200 flex items-center gap-3"><Icon name="AlertCircle" /><span>{error}</span></div>
-                            ) : history.length > 0 ? (
-                                <div className="space-y-6">
-                                    {history.map((h, i) => (
-                                        <div key={i} className="relative border-l-4 border-indigo-500 pl-8 py-2">
-                                            <div className="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-indigo-600 border-4 border-white"></div>
-                                            <div className="flex flex-col md:flex-row justify-between items-start mb-2 gap-4">
-                                                <div><p className="text-indigo-900 font-bold text-lg">{h.date}</p><p className="text-slate-500 font-bold uppercase text-[10px]">{h.type}</p></div>
-                                                <div className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-black uppercase">{h.result}</div>
-                                            </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs mb-2">
-                                                <p><span className="text-slate-400 font-bold uppercase text-[9px]">Médico:</span> {h.doctor}</p>
-                                                <p><span className="text-slate-400 font-bold uppercase text-[9px]">Local:</span> {h.location}</p>
-                                            </div>
-                                            <div className="p-3 bg-slate-50 border border-slate-100 rounded-lg"><p className="text-slate-700 italic text-xs leading-relaxed">"{h.observations}"</p></div>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="text-center py-16 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
-                                    <Icon name="AlertCircle" className="mx-auto text-slate-300 mb-4" size={48} />
-                                    <p className="text-slate-500 font-bold">Nenhum histórico encontrado para este CPF.</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                    <PrintTemplate person={person} history={history} />
-                </div>
-            );
-        };
-
         const App = () => {
-            const [view, setView] = useState('DASHBOARD');
             const [data, setData] = useState([]);
-            const [selectedPerson, setSelectedPerson] = useState(null);
             const [loading, setLoading] = useState(true);
+            const [printLoading, setPrintLoading] = useState(false);
+            const [progress, setProgress] = useState(0);
+            const [processingText, setProcessingText] = useState('');
             const [searchTerm, setSearchTerm] = useState('');
+            const [filterDate, setFilterDate] = useState('');
+            const [finalidadeFilter, setFinalidadeFilter] = useState('');
             const [selectedIds, setSelectedIds] = useState([]);
-            const [error, setError] = useState(null);
+            const [generatedResults, setGeneratedResults] = useState([]);
+            const [previewItem, setPreviewItem] = useState(null);
 
-            useEffect(() => {
-                if (window.google && google.script && google.script.run) {
+            const loadData = useCallback(() => {
+                setLoading(true);
+                if (window.google && google.script) {
                     google.script.run
-                        .withSuccessHandler((res) => { 
-                            if(res && res.error) setError(res.error);
-                            else setData(res || []); 
-                            setLoading(false); 
-                        })
-                        .withFailureHandler((err) => {
-                            setError(err.message || "Falha ao carregar dados do servidor.");
+                        .withSuccessHandler((res) => {
+                            if (res && res.error) {
+                                console.error(res.error);
+                                setLoading(false);
+                                return;
+                            }
+                            setData(res || []);
                             setLoading(false);
                         })
-                        .getDailyData();
+                        .withFailureHandler((err) => {
+                            console.error("Erro GAS:", err);
+                            setLoading(false);
+                        })
+                        .getDailyData(filterDate);
                 } else {
-                    setError("Esta aplicação deve ser executada dentro do Google Apps Script.");
+                    // Simulação offline ou erro de carregamento GAS
                     setLoading(false);
                 }
-            }, []);
+            }, [filterDate]);
 
-            const toggleSelect = useCallback((id) => {
-                setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-            }, []);
+            useEffect(() => { loadData(); }, [loadData]);
 
-            const toggleSelectAll = useCallback((allIds) => {
-                setSelectedIds(prev => prev.length === allIds.length ? [] : allIds);
-            }, []);
+            const generatePdfFinal = async (results) => {
+                if (results.length === 0) return;
+                setPrintLoading(true);
+                setProcessingText("Formatando layout e margens...");
+                setProgress(92);
 
-            const handleBulkPrint = () => {
-                if(selectedIds.length === 0) return;
-                const firstSelected = data.find(p => p.id === selectedIds[0]);
-                setSelectedPerson(firstSelected);
-                setView('HISTORY');
-                setTimeout(() => window.print(), 1000);
+                const container = document.createElement('div');
+                container.className = "pdf-container-render";
+                const root = ReactDOM.createRoot(container);
+                
+                root.render(
+                    <div>
+                        {results.map((r, idx) => (
+                            <PrintPage key={idx} person={r.person} history={r.historyData} isLast={idx === results.length - 1} />
+                        ))}
+                    </div>
+                );
+
+                await new Promise(r => setTimeout(r, 1500));
+
+                const opt = {
+                    margin: [0, 0, 0, 0],
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { 
+                        scale: 2.2, 
+                        useCORS: true, 
+                        letterRendering: true,
+                        width: 794 // 210mm @ 96dpi aprox.
+                    },
+                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                    pagebreak: { mode: ['css', 'legacy'] }
+                };
+
+                try {
+                    await html2pdf().set(opt).from(container).toPdf().get('pdf').then(function (pdf) {
+                        const totalPages = pdf.internal.getNumberOfPages();
+                        const pageWidth = pdf.internal.pageSize.getWidth();
+                        const pageHeight = pdf.internal.pageSize.getHeight();
+                        
+                        const pagesPerPerson = Math.ceil(totalPages / results.length);
+                        
+                        for (let i = 1; i <= totalPages; i++) {
+                            pdf.setPage(i);
+                            
+                            const personIndex = Math.min(results.length - 1, Math.floor((i - 1) / pagesPerPerson));
+                            const person = results[personIndex].person;
+                            const pageInPerson = ((i - 1) % pagesPerPerson) + 1;
+
+                            if (pageInPerson > 1) {
+                                pdf.setFontSize(7.5);
+                                pdf.setTextColor(100);
+                                pdf.setFont("helvetica", "italic");
+                                const textCont = `(Continuação do Histórico Militar do ${person.posto}/${person.quadro}/${person.especialidade} ${person.name}.)`;
+                                pdf.text(textCont, pageWidth / 2, 8, { align: 'center' });
+                            }
+
+                            pdf.setFontSize(7);
+                            pdf.setTextColor(150);
+                            pdf.setFont("helvetica", "normal");
+                            const footerText = `${person.name.toUpperCase()} | PÁGINA ${pageInPerson} DE ${pagesPerPerson} | SIS-SAUDE HAMN`;
+                            pdf.text(footerText, pageWidth / 2, pageHeight - 8, { align: 'center' });
+                        }
+                    }).save(results.length > 1 ? `LOTE_HISTORICO_${new Date().getTime()}.pdf` : `HISTORICO_${results[0].person.name.replace(/\s+/g, '_')}.pdf`);
+                } catch (e) {
+                    console.error("Erro na geração do PDF:", e);
+                } finally {
+                    setProgress(100);
+                    setTimeout(() => setPrintLoading(false), 800);
+                }
             };
 
+            const onPreview = async (item) => {
+                if (item.historyData) {
+                    setPreviewItem(item);
+                } else {
+                    setPrintLoading(true);
+                    setProcessingText(`Buscando histórico de ${item.person.name}...`);
+                    setProgress(40);
+                    try {
+                        const history = await new Promise((resolve, reject) => {
+                            google.script.run
+                                .withSuccessHandler(resolve)
+                                .withFailureHandler(reject)
+                                .getHistoryByCpf(item.person.cpf);
+                        });
+                        setPreviewItem({ person: item.person, historyData: history });
+                    } catch (err) {
+                        console.error("Erro ao buscar histórico:", err);
+                        alert("Erro ao buscar histórico do servidor.");
+                    } finally {
+                        setPrintLoading(false);
+                    }
+                }
+            };
+
+            const onBulkPrint = async (customIds = null) => {
+                let targetIds = Array.isArray(customIds) ? customIds : (typeof customIds === 'string' ? [customIds] : selectedIds);
+                if (targetIds.length === 0) return;
+
+                setPrintLoading(true);
+                setProgress(0);
+                const total = targetIds.length;
+                let currentResults = []; 
+                
+                const selectedPeople = targetIds.map(id => data.find(p => p.id === id)).filter(Boolean);
+                const cpfs = selectedPeople.map(p => p.cpf);
+                
+                setProcessingText(`Sincronizando Banco de Fichas Julgadas...`);
+                
+                try {
+                    const historiesBatch = await new Promise((resolve, reject) => {
+                        google.script.run
+                            .withSuccessHandler(resolve)
+                            .withFailureHandler(reject)
+                            .getMultipleHistoryData(cpfs);
+                    });
+
+                    for (let i = 0; i < total; i++) {
+                        const person = selectedPeople[i];
+                        setProgress(Math.round(((i + 1) / total) * 85));
+                        setProcessingText(`Preparando Histórico: ${person.name}`);
+                        const historyData = historiesBatch[person.cpf] || [];
+                        currentResults.push({ person, historyData });
+                        await new Promise(r => setTimeout(r, 50));
+                    }
+                    
+                    setGeneratedResults(currentResults);
+                    setProgress(90);
+                    setProcessingText('Sincronização Finalizada! Gerando Arquivo...');
+                    
+                    setTimeout(() => {
+                        generatePdfFinal(currentResults);
+                        setSelectedIds([]);
+                    }, 400);
+                } catch (err) {
+                    console.error("Erro na sincronização:", err);
+                    alert("Erro crítico na sincronização com o banco de dados.");
+                    setPrintLoading(false);
+                }
+            };
+
+            const toggleSelect = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+            const toggleSelectAll = (allIds) => setSelectedIds(prev => prev.length === allIds.length ? [] : allIds);
+            const onClearResults = () => { setGeneratedResults([]); setSelectedIds([]); };
+
             return (
-                <div className="min-h-screen flex flex-col">
-                    <header className="no-print bg-indigo-900 text-white h-16 flex items-center px-6 sticky top-0 z-50">
-                        <div className="max-w-7xl mx-auto w-full flex items-center gap-3 cursor-pointer" onClick={() => setView('DASHBOARD')}>
-                            <Icon name="ShieldCheck" size={24} />
-                            <h1 className="text-xl font-black uppercase tracking-tight">SIS-SAUDE <span className="font-light opacity-60">| FAB</span></h1>
+                <div className="min-h-screen flex flex-col bg-slate-50">
+                    <header className="bg-indigo-950 text-white h-20 flex items-center px-6 sticky top-0 z-50 shadow-lg">
+                        <div className="max-w-[98%] mx-auto w-full flex items-center justify-between">
+                            <div className="flex items-center gap-3 cursor-pointer" onClick={() => window.location.reload()}>
+                                <div className="p-2 bg-white/10 rounded-xl border border-white/5">
+                                    <Icon name="ShieldCheck" size={28} />
+                                </div>
+                                <div>
+                                    <h1 className="text-xl font-black uppercase tracking-tight leading-none">SIS-SAUDE</h1>
+                                    <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest opacity-80 mt-1">Hospital de Aeronáutica de Manaus</p>
+                                </div>
+                            </div>
                         </div>
                     </header>
-                    <main className="flex-1 max-w-7xl mx-auto px-6 py-8 w-full">
-                        {view === 'DASHBOARD' ? (
-                            <Dashboard data={data} loading={loading} error={error} searchTerm={searchTerm} setSearchTerm={setSearchTerm} 
-                                onSelect={(p) => { setSelectedPerson(p); setView('HISTORY'); }}
-                                selectedIds={selectedIds} toggleSelect={toggleSelect} toggleSelectAll={toggleSelectAll} onBulkPrint={handleBulkPrint} />
-                        ) : (
-                            <HistoryView person={selectedPerson} onBack={() => setView('DASHBOARD')} />
+
+                    <main className="flex-1 max-w-[98%] mx-auto px-4 py-6 w-full">
+                        {printLoading && (
+                            <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md z-[100] flex flex-col items-center justify-center p-6 transition-all">
+                                <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl flex flex-col items-center w-full max-w-md text-center border-b-8 border-indigo-600">
+                                    <div className="mb-8 relative">
+                                        <div className="spinner border-t-indigo-600 w-20 h-20 border-[6px]"></div>
+                                        <div className="absolute inset-0 flex items-center justify-center font-black text-lg text-indigo-700">{progress}%</div>
+                                    </div>
+                                    <h3 className="text-2xl font-black text-slate-900 mb-2 uppercase tracking-tight">Processando</h3>
+                                    <p className="text-slate-500 font-bold text-sm mb-8 leading-relaxed h-10">{processingText}</p>
+                                    <div className="progress-container"><div className="progress-bar" style={{ width: `${progress}%` }}></div></div>
+                                </div>
+                            </div>
                         )}
+
+                        <PreviewModal isOpen={!!previewItem} onClose={() => setPreviewItem(null)} data={previewItem} />
+
+                        <Dashboard 
+                            data={data} loading={loading} 
+                            searchTerm={searchTerm} setSearchTerm={setSearchTerm} 
+                            filterDate={filterDate} setFilterDate={setFilterDate} 
+                            finalidadeFilter={finalidadeFilter} setFilterDate={setFilterDate}
+                            finalidadeFilter={finalidadeFilter} setFinalidadeFilter={setFinalidadeFilter}
+                            selectedIds={selectedIds} toggleSelect={toggleSelect} toggleSelectAll={toggleSelectAll} 
+                            onBulkPrint={onBulkPrint} generatedResults={generatedResults}
+                            onDownloadOne={(res) => generatePdfFinal([res])}
+                            onClearResults={onClearResults}
+                            onDownloadAll={() => generatePdfFinal(generatedResults)}
+                            onPreview={onPreview}
+                        />
                     </main>
-                    <footer className="no-print bg-white border-t border-slate-200 py-6 text-center text-slate-400 text-[10px] font-bold uppercase">
-                        <p>© 2024 SIS-SAUDE - Comando da Aeronáutica</p>
+
+                    <footer className="no-print mt-10 pb-10 border-t border-slate-100 pt-6 text-center">
+                        <div className="inline-flex items-center gap-3 text-slate-400 text-[9px] font-black uppercase tracking-widest bg-white px-6 py-2 rounded-full shadow-sm border border-slate-100">
+                            <Icon name="ShieldCheck" size={14} className="text-indigo-400" />
+                            SISTEMA INTEGRADO DE SAÚDE | HAMN
+                        </div>
+                        <p className="text-slate-300 font-black tracking-widest uppercase text-[8px] mt-3">Developed by Sgt Barros | HAMN ☏3623-4249</p>
                     </footer>
                 </div>
             );
         };
-
-        const container = document.getElementById('root');
-        const root = ReactDOM.createRoot(container);
-        root.render(<App />);
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     </script>
 </body>
 </html>
